@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+data/chroma/
+*.log
+.pytest_cache/
+.vscode/*
+!.vscode/extensions.json
+.claude/settings.local.json

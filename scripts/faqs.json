@@ -1,0 +1,14 @@
+[
+  {
+    "question": "¿Cuáles son los medios de pago?",
+    "answer": "Editá este archivo (scripts/faqs.json) con los medios de pago reales de Gandy's: tarjetas, transferencia, efectivo contra entrega, etc."
+  },
+  {
+    "question": "¿Hacen envíos a todo Paraguay?",
+    "answer": "Editá este archivo con la política real de envíos: zonas de cobertura, costos y tiempos estimados."
+  },
+  {
+    "question": "¿Cuál es el horario de atención?",
+    "answer": "Editá este archivo con el horario real de atención de Gandy's."
+  }
+]
