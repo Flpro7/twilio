@@ -1,6 +1,6 @@
 from app.llm.azure_openai import get_chat_completion
 from app.rag.embeddings import embed_text
-from app.rag.vector_store import query
+from app.rag.vector_store import query, query_with_metadata
 
 FALLBACK_ANSWER = (
     "Todavia no tengo esa informacion cargada. Un asesor de Gandy's te va a "
@@ -17,3 +17,38 @@ def answer_question(question: str) -> str:
 
     context = "\n---\n".join(matched_chunks)
     return get_chat_completion(question=question, context=context)
+
+
+def get_product_matches(question: str, max_products: int) -> list[dict]:
+    """Busca productos relevantes a la pregunta para armar un carousel.
+
+    Devuelve hasta max_products dicts con la metadata de cada producto
+    (name, price, image_url, url). Descarta:
+    - matches que no sean de tipo "product" (ej. chunks de FAQ)
+    - productos duplicados (mismo url)
+    - productos sin image_url (una tarjeta sin foto no tiene sentido)
+
+    Pedimos mas resultados de los necesarios (max_products * 3) porque parte
+    de lo que devuelve el retrieval se va a descartar por los filtros de
+    arriba.
+    """
+    question_embedding = embed_text(question)
+    results = query_with_metadata(question_embedding, n_results=max_products * 3)
+
+    products: list[dict] = []
+    seen_urls: set[str] = set()
+    for item in results:
+        metadata = item["metadata"]
+        if metadata.get("type") != "product":
+            continue
+        url = metadata.get("url", "")
+        if not url or url in seen_urls:
+            continue
+        if not metadata.get("image_url"):
+            continue
+        seen_urls.add(url)
+        products.append(metadata)
+        if len(products) >= max_products:
+            break
+
+    return products

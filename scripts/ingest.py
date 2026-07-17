@@ -10,7 +10,7 @@ from pathlib import Path
 
 from app.rag.embeddings import embed_texts
 from app.rag.vector_store import upsert_documents
-from worker.scraper import scrape_products
+from worker.scraper import scrape_products_full
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gandys-bot.ingest")
@@ -53,12 +53,18 @@ def run_ingest() -> None:
     texts: list[str] = []
     metadatas: list[dict] = []
 
-    products = scrape_products()
+    products = scrape_products_full()
     logger.info("Productos scrapeados: %d", len(products))
     for i, product in enumerate(products):
         ids.append(f"product-{i}-{product.get('url', i)}")
         texts.append(_product_to_document(product))
-        metadatas.append({"type": "product", "url": product.get("url", "")})
+        metadatas.append({
+            "type": "product",
+            "url": product.get("url", ""),
+            "name": product.get("name", ""),
+            "price": product.get("price", ""),
+            "image_url": product.get("image_url", ""),
+        })
 
     faqs = _load_faqs()
     logger.info("FAQs cargadas: %d", len(faqs))

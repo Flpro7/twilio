@@ -10,6 +10,14 @@ class Settings(BaseSettings):
     twilio_whatsapp_number: str
     validate_twilio_signature: bool = True
 
+    # WhatsApp Carousel
+    # twilio_carousel_content_sid queda vacio hasta correr
+    # scripts/send_carousel_demo.py (create + approve) y que WhatsApp
+    # apruebe el template -- mientras tanto el bot cae siempre al flujo de
+    # texto normal.
+    twilio_carousel_content_sid: str = ""
+    twilio_carousel_num_cards: int = 3
+
     # Azure OpenAI
     azure_openai_endpoint: str
     azure_openai_api_key: str

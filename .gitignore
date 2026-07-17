@@ -9,3 +9,5 @@ data/chroma/
 .vscode/*
 !.vscode/extensions.json
 .claude/settings.local.json
+.DS_Store
+Thumbs.db
