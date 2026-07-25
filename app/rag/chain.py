@@ -1,4 +1,4 @@
-from app.llm.azure_openai import get_chat_completion
+from app.llm.azure_openai import get_chat_completion, get_intent_completion
 from app.rag.embeddings import embed_text
 from app.rag.vector_store import query, query_with_metadata
 
@@ -17,6 +17,25 @@ def answer_question(question: str) -> str:
 
     context = "\n---\n".join(matched_chunks)
     return get_chat_completion(question=question, context=context)
+
+
+def classify_intent(question: str) -> str:
+    """Usa el LLM para decidir si conviene mandar un carousel de productos
+    o responder con texto. A diferencia de buscar palabras clave a mano,
+    esto entiende la intencion real del mensaje sin importar errores de
+    tipeo ni formas de preguntar que no se anticiparon.
+
+    Devuelve "CATALOGO" o "PREGUNTA". Ante cualquier falla (o una respuesta
+    que no sea ninguna de las dos) devuelve "PREGUNTA" -- el fallback mas
+    seguro, porque en el peor caso responde con texto en vez de mandar un
+    carousel de mas que ignore la pregunta real del cliente.
+    """
+    try:
+        raw = get_intent_completion(question)
+    except Exception:  # noqa: BLE001
+        return "PREGUNTA"
+
+    return "CATALOGO" if "CATALOGO" in raw.strip().upper() else "PREGUNTA"
 
 
 def get_product_matches(question: str, max_products: int) -> list[dict]:

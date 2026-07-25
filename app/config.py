@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     twilio_carousel_content_sid: str = ""
     twilio_carousel_num_cards: int = 3
 
+    # Numero de WhatsApp para el boton "Contactar" del carousel (wa.me/...).
+    # IMPORTANTE: formato SIN "+" y SIN el prefijo "whatsapp:" -- son solo
+    # digitos con codigo de pais, ej. Paraguay: 595984294691. Es distinto
+    # al formato de TWILIO_WHATSAPP_NUMBER de arriba. Es una variable del
+    # template (no esta grabada en el texto aprobado), asi que cambiar este
+    # valor y reiniciar el servidor alcanza -- no hace falta crear un
+    # template nuevo ni volver a pedir aprobacion.
+    gandys_contact_whatsapp_number: str = "595981767773"
+
     # Azure OpenAI
     azure_openai_endpoint: str
     azure_openai_api_key: str

@@ -8,6 +8,7 @@ Uso:
   python -m scripts.send_carousel_demo send <ContentSid> whatsapp:+595XXXXXXXXX
 """
 
+import json
 import sys
 
 from app.templates.carousel import (
@@ -40,8 +41,30 @@ def main() -> None:
     elif action == "send":
         content_sid = sys.argv[2]
         to_number = sys.argv[3]
-        products = scrape_products()[:3]
+        all_products = scrape_products()
+        # Igual que get_product_matches() en produccion: sin imagen, la
+        # tarjeta no tiene sentido, y ademas Twilio rechaza el envio entero
+        # si una variable de media queda vacia (error 21656).
+        products_with_image = [p for p in all_products if p.get("image_url")]
+        products = products_with_image[:3]
+        if len(products) < 3:
+            print(
+                f"Solo se encontraron {len(products)} productos con imagen "
+                "(se necesitan 3). Probá de nuevo o revisá el scraper."
+            )
+            return
+
         variables = products_to_content_variables("cliente", products)
+
+        # DEBUG temporal: imprime exactamente que se le manda a Twilio, para
+        # detectar a simple vista un valor vacio/raro sin adivinar. Sacar
+        # despues de resolver el error 21656.
+        print("--- content_variables a enviar ---")
+        print(json.dumps(variables, indent=2, ensure_ascii=False))
+        for key, value in variables.items():
+            print(f"  {key!r}: len={len(value)} repr={value!r}")
+        print("-----------------------------------")
+
         sid = send_carousel(to_number, content_sid, variables)
         print(f"Mensaje enviado: {sid}")
 

@@ -64,6 +64,7 @@ def run_ingest() -> None:
             "name": product.get("name", ""),
             "price": product.get("price", ""),
             "image_url": product.get("image_url", ""),
+            "description": product.get("description", ""),
         })
 
     faqs = _load_faqs()

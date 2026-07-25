@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request, Response
 from twilio.twiml.messaging_response import MessagingResponse
 
 from app.config import settings
-from app.rag.chain import answer_question, get_product_matches
+from app.rag.chain import answer_question, classify_intent, get_product_matches
 from app.templates.carousel import products_to_content_variables, send_carousel
 from app.twilio_client import is_valid_twilio_request
 
@@ -46,14 +46,23 @@ def _try_send_carousel(sender: str, incoming_message: str) -> bool:
 
     Devuelve True si lo mando (para que el caller no mande TAMBIEN una
     respuesta de texto por TwiML). Si algo falla, si no hay suficientes
-    productos con imagen para llenar el template, o si todavia no hay un
-    ContentSid aprobado configurado, devuelve False y el caller cae al
-    flujo de texto normal.
+    productos con imagen, si el LLM clasifica el mensaje como una pregunta
+    puntual (no un pedido de catalogo), o si todavia no hay un ContentSid
+    aprobado configurado, devuelve False y el caller cae al flujo de texto
+    normal.
     """
     if not settings.twilio_carousel_content_sid:
         # Sin ContentSid (todavia no aprobado por WhatsApp) ni vale la pena
         # buscar productos -- el envio va a fallar seguro. Nos ahorramos la
         # llamada a Azure OpenAI en cada mensaje mientras se espera.
+        return False
+
+    if classify_intent(incoming_message) != "CATALOGO":
+        # "para que sirven los cargadores de baterias?" no es un pedido de
+        # ver opciones -- es una pregunta puntual que necesita texto/LLM,
+        # no otro carousel generico que la ignora. Usar el LLM para esta
+        # decision (en vez de buscar palabras clave a mano) entiende la
+        # intencion real sin importar errores de tipeo.
         return False
 
     try:
