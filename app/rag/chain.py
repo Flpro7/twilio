@@ -8,7 +8,7 @@ FALLBACK_ANSWER = (
 )
 
 
-def answer_question(question: str) -> str:
+def answer_question(question: str, history: list[dict] | None = None) -> str:
     question_embedding = embed_text(question)
     matched_chunks = query(question_embedding, n_results=4)
 
@@ -16,26 +16,31 @@ def answer_question(question: str) -> str:
         return FALLBACK_ANSWER
 
     context = "\n---\n".join(matched_chunks)
-    return get_chat_completion(question=question, context=context)
+    return get_chat_completion(question=question, context=context, history=history)
 
 
 def classify_intent(question: str) -> str:
-    """Usa el LLM para decidir si conviene mandar un carousel de productos
-    o responder con texto. A diferencia de buscar palabras clave a mano,
-    esto entiende la intencion real del mensaje sin importar errores de
-    tipeo ni formas de preguntar que no se anticiparon.
+    """Usa el LLM para decidir si el mensaje es un saludo, un pedido de
+    catalogo, o una pregunta puntual. A diferencia de buscar palabras clave
+    a mano, esto entiende la intencion real del mensaje sin importar
+    errores de tipeo ni formas de preguntar que no se anticiparon.
 
-    Devuelve "CATALOGO" o "PREGUNTA". Ante cualquier falla (o una respuesta
-    que no sea ninguna de las dos) devuelve "PREGUNTA" -- el fallback mas
-    seguro, porque en el peor caso responde con texto en vez de mandar un
-    carousel de mas que ignore la pregunta real del cliente.
+    Devuelve "SALUDO", "CATALOGO" o "PREGUNTA". Ante cualquier falla (o una
+    respuesta que no sea ninguna de las tres) devuelve "PREGUNTA" -- el
+    fallback mas seguro, porque en el peor caso responde con texto en vez
+    de mandar un carousel de mas o saltarse una consulta real.
     """
     try:
         raw = get_intent_completion(question)
     except Exception:  # noqa: BLE001
         return "PREGUNTA"
 
-    return "CATALOGO" if "CATALOGO" in raw.strip().upper() else "PREGUNTA"
+    normalized = raw.strip().upper()
+    if "SALUDO" in normalized:
+        return "SALUDO"
+    if "CATALOGO" in normalized:
+        return "CATALOGO"
+    return "PREGUNTA"
 
 
 def get_product_matches(question: str, max_products: int) -> list[dict]:

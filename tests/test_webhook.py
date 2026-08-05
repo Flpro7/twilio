@@ -15,8 +15,12 @@ def test_health() -> None:
 
 @patch("app.main.is_valid_twilio_request", return_value=True)
 @patch("app.main.classify_intent", return_value="PREGUNTA")
+@patch("app.main.get_recent_history", return_value=[])
+@patch("app.main.append_message")
 @patch("app.main.answer_question", return_value="Respuesta de prueba")
-def test_webhook_replies_with_twiml(mock_answer, mock_intent, mock_valid) -> None:
+def test_webhook_replies_with_twiml(
+    mock_answer, mock_append, mock_history, mock_intent, mock_valid
+) -> None:
     response = client.post(
         "/webhook/whatsapp",
         data={"From": "whatsapp:+595981000000", "Body": "Hola"},

@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # template (no esta grabada en el texto aprobado), asi que cambiar este
     # valor y reiniciar el servidor alcanza -- no hace falta crear un
     # template nuevo ni volver a pedir aprobacion.
-    gandys_contact_whatsapp_number: str = "595981767773"
+    gandys_contact_whatsapp_number: str = "595984294691"
 
     # Azure OpenAI
     azure_openai_endpoint: str
@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     # RAG
     chroma_persist_dir: str = "./data/chroma"
     chroma_collection_name: str = "gandys_knowledge"
+
+    # Memoria de conversacion
+    # Cuantos intercambios previos (usuario+asistente) se le mandan al LLM
+    # como contexto de la charla. Subilo mas adelante si hace falta mas
+    # memoria -- no requiere ningun otro cambio de codigo.
+    conversation_history_max_exchanges: int = 3
 
     # Scraper
     scrape_base_url: str = "https://gandys.com.py"

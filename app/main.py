@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request, Response
 from twilio.twiml.messaging_response import MessagingResponse
 
 from app.config import settings
+from app.conversation_store import append_message, get_recent_history
 from app.rag.chain import answer_question, classify_intent, get_product_matches
 from app.templates.carousel import products_to_content_variables, send_carousel
 from app.twilio_client import is_valid_twilio_request
@@ -44,25 +45,15 @@ def _resolve_public_url(request: Request) -> str:
 def _try_send_carousel(sender: str, incoming_message: str) -> bool:
     """Intenta mandar el carousel de productos via la API REST de Twilio.
 
-    Devuelve True si lo mando (para que el caller no mande TAMBIEN una
-    respuesta de texto por TwiML). Si algo falla, si no hay suficientes
-    productos con imagen, si el LLM clasifica el mensaje como una pregunta
-    puntual (no un pedido de catalogo), o si todavia no hay un ContentSid
-    aprobado configurado, devuelve False y el caller cae al flujo de texto
-    normal.
+    Asume que el llamador ya determino que la intencion es CATALOGO -- esta
+    funcion no clasifica, solo busca productos y envia. Devuelve True si lo
+    mando (para que el caller no mande TAMBIEN una respuesta de texto por
+    TwiML). Si algo falla, o si no hay suficientes productos con imagen,
+    devuelve False y el caller cae al flujo de texto normal.
     """
     if not settings.twilio_carousel_content_sid:
         # Sin ContentSid (todavia no aprobado por WhatsApp) ni vale la pena
-        # buscar productos -- el envio va a fallar seguro. Nos ahorramos la
-        # llamada a Azure OpenAI en cada mensaje mientras se espera.
-        return False
-
-    if classify_intent(incoming_message) != "CATALOGO":
-        # "para que sirven los cargadores de baterias?" no es un pedido de
-        # ver opciones -- es una pregunta puntual que necesita texto/LLM,
-        # no otro carousel generico que la ignora. Usar el LLM para esta
-        # decision (en vez de buscar palabras clave a mano) entiende la
-        # intencion real sin importar errores de tipeo.
+        # buscar productos -- el envio va a fallar seguro.
         return False
 
     try:
@@ -70,12 +61,22 @@ def _try_send_carousel(sender: str, incoming_message: str) -> bool:
         product_matches = get_product_matches(incoming_message, num_cards)
 
         if len(product_matches) < num_cards:
+            logger.info(
+                "Solo %d/%d productos con imagen encontrados para %r, cae a texto",
+                len(product_matches), num_cards, incoming_message,
+            )
             return False
 
         content_variables = products_to_content_variables("cliente", product_matches)
         send_carousel(sender, settings.twilio_carousel_content_sid, content_variables)
         logger.info(
             "Carousel enviado a %s con %d productos", sender, len(product_matches)
+        )
+        product_names = ", ".join(p.get("name", "") for p in product_matches)
+        append_message(
+            sender,
+            "assistant",
+            f"[Se envió un carousel con estos productos: {product_names}]",
         )
         return True
     except Exception:  # noqa: BLE001
@@ -84,6 +85,9 @@ def _try_send_carousel(sender: str, incoming_message: str) -> bool:
         # tirar un 500 al webhook.
         logger.exception("Fallo el intento de carousel, caigo a respuesta de texto")
         return False
+
+
+GREETING_REPLY = "Hola! Soy el asistente de Gandy's. Contame en que te puedo ayudar."
 
 
 @app.post("/webhook/whatsapp")
@@ -105,13 +109,33 @@ async def whatsapp_webhook(request: Request) -> Response:
     twiml = MessagingResponse()
 
     if not incoming_message:
-        twiml.message("Hola! Soy el asistente de Gandy's. Contame en que te puedo ayudar.")
+        twiml.message(GREETING_REPLY)
         return Response(content=str(twiml), media_type="application/xml")
 
-    carousel_sent = _try_send_carousel(sender, incoming_message)
+    # Se lee el historial de ANTES de este mensaje -- tiene que ser antes de
+    # agregar el mensaje actual, si no aparece duplicado (una vez como
+    # historial, otra vez como la pregunta puntual de este turno).
+    history = get_recent_history(sender, settings.conversation_history_max_exchanges)
+    append_message(sender, "user", incoming_message)
+
+    intent = classify_intent(incoming_message)
+    logger.info("Intencion clasificada para %r: %s", incoming_message, intent)
+
+    if intent == "SALUDO":
+        # Un saludo simple no tiene contenido real que buscar -- si lo
+        # mandamos a embeddings, el "match mas cercano" puede ser
+        # cualquier cosa random del catalogo (paso real: "buenas" termino
+        # hablando de un producto de unas sin ninguna relacion).
+        append_message(sender, "assistant", GREETING_REPLY)
+        twiml.message(GREETING_REPLY)
+        return Response(content=str(twiml), media_type="application/xml")
+
+    carousel_sent = intent == "CATALOGO" and _try_send_carousel(sender, incoming_message)
 
     if not carousel_sent:
-        twiml.message(answer_question(incoming_message))
+        reply_text = answer_question(incoming_message, history=history)
+        append_message(sender, "assistant", reply_text)
+        twiml.message(reply_text)
 
     # Si el carousel se mando, devolvemos TwiML vacio: el carousel ya salio
     # por la API REST, y una respuesta de texto aca duplicaria el mensaje.
