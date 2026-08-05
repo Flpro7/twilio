@@ -5,7 +5,12 @@ from twilio.twiml.messaging_response import MessagingResponse
 
 from app.config import settings
 from app.conversation_store import append_message, get_recent_history
-from app.rag.chain import answer_question, classify_intent, get_product_matches
+from app.rag.chain import (
+    answer_question,
+    classify_intent,
+    get_catalog_answer,
+    get_product_matches,
+)
 from app.templates.carousel import products_to_content_variables, send_carousel
 from app.twilio_client import is_valid_twilio_request
 
@@ -133,7 +138,14 @@ async def whatsapp_webhook(request: Request) -> Response:
     carousel_sent = intent == "CATALOGO" and _try_send_carousel(sender, incoming_message)
 
     if not carousel_sent:
-        reply_text = answer_question(incoming_message, history=history)
+        if intent == "CATALOGO":
+            # No alcanzo para el carousel (menos de 3 productos con
+            # imagen), pero sigue siendo un pedido de ver opciones -- una
+            # busqueda mas amplia y filtrada a solo productos da una
+            # respuesta mas representativa que el answer_question generico.
+            reply_text = get_catalog_answer(incoming_message, history=history)
+        else:
+            reply_text = answer_question(incoming_message, history=history)
         append_message(sender, "assistant", reply_text)
         twiml.message(reply_text)
 

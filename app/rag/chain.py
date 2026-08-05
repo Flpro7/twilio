@@ -3,8 +3,7 @@ from app.rag.embeddings import embed_text
 from app.rag.vector_store import query, query_with_metadata
 
 FALLBACK_ANSWER = (
-    "Todavia no tengo esa informacion cargada. Un asesor de Gandy's te va a "
-    "responder a la brevedad por este mismo chat."
+    "Todavia no tengo esa informacion cargada. Si querés, puedo proporcionarte el contacto de un asesor de Gandy's por este mismo chat."
 )
 
 
@@ -41,6 +40,43 @@ def classify_intent(question: str) -> str:
     if "CATALOGO" in normalized:
         return "CATALOGO"
     return "PREGUNTA"
+
+
+def get_catalog_answer(
+    question: str, history: list[dict] | None = None, max_results: int = 8
+) -> str:
+    """Respuesta de texto para preguntas de tipo CATALOGO cuando no se pudo
+    mandar el carousel (ej. menos de 3 productos con imagen encontrados).
+
+    A diferencia de answer_question() -- que pide solo 4 chunks sin filtrar,
+    mezclando productos y FAQs -- esta busca mas resultados y los filtra a
+    SOLO productos, deduplicados por url. Para preguntas amplias ("cuales
+    son todos los racks que tienen") esto evita que la respuesta se quede
+    con 1 sola coincidencia fuerte cuando en realidad hay varias opciones
+    reales en el catalogo.
+    """
+    question_embedding = embed_text(question)
+    results = query_with_metadata(question_embedding, n_results=max_results * 2)
+
+    seen_urls: set[str] = set()
+    product_docs: list[str] = []
+    for item in results:
+        metadata = item["metadata"]
+        if metadata.get("type") != "product":
+            continue
+        url = metadata.get("url", "")
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        product_docs.append(item["document"])
+        if len(product_docs) >= max_results:
+            break
+
+    if not product_docs:
+        return FALLBACK_ANSWER
+
+    context = "\n---\n".join(product_docs)
+    return get_chat_completion(question=question, context=context, history=history)
 
 
 def get_product_matches(question: str, max_products: int) -> list[dict]:
