@@ -12,7 +12,7 @@ from app.rag.chain import (
     get_product_matches,
 )
 from app.templates.carousel import products_to_content_variables, send_carousel
-from app.twilio_client import is_valid_twilio_request
+from app.twilio_client import is_valid_twilio_request, send_vcard
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gandys-bot")
@@ -25,26 +25,52 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
+def _resolve_public_base(request: Request) -> str:
+    """scheme://host sin path -- para construir URLs publicas absolutas
+    (ej. el vCard del asesor) que Twilio necesita poder buscar desde afuera.
+    Usa los mismos headers que _resolve_public_url, ver esa funcion."""
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get("x-forwarded-host")
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}"
+    return f"{request.url.scheme}://{request.url.netloc}"
+
+
 def _resolve_public_url(request: Request) -> str:
     """
     Reconstruye la URL publica de la request para validar la firma de Twilio.
 
-    Detras de un proxy/tunel (dev tunnels, ngrok, etc.) el header Host que
-    ve FastAPI suele ser localhost, mientras que Twilio firmo la request
-    contra el dominio publico real. Los proxies estandar exponen ese
-    dominio original en X-Forwarded-Proto / X-Forwarded-Host, asi que los
-    usamos cuando estan presentes y caemos a request.url si no.
+    Detras de un proxy/tunel (dev tunnels, ngrok, Railway, etc.) el header
+    Host que ve FastAPI a veces no es el dominio publico real, mientras que
+    Twilio firmo la request contra ese dominio publico. Los proxies
+    estandar exponen ese dominio original en X-Forwarded-Proto /
+    X-Forwarded-Host, asi que los usamos cuando estan presentes y caemos a
+    request.url si no.
     """
-    forwarded_proto = request.headers.get("x-forwarded-proto")
-    forwarded_host = request.headers.get("x-forwarded-host")
+    base = _resolve_public_base(request)
+    url = f"{base}{request.url.path}"
+    if request.url.query:
+        url += f"?{request.url.query}"
+    return url
 
-    if forwarded_proto and forwarded_host:
-        url = f"{forwarded_proto}://{forwarded_host}{request.url.path}"
-        if request.url.query:
-            url += f"?{request.url.query}"
-        return url
 
-    return str(request.url)
+@app.get("/static/asesor.vcf")
+async def asesor_vcard() -> Response:
+    """Vcard del asesor de Gandy's, generado dinamicamente a partir del
+    mismo numero que ya usa el boton "Contactar" del carousel (ver
+    settings.gandys_contact_whatsapp_number en app/config.py) -- asi hay un
+    solo lugar donde cambiarlo cuando se reemplace por el asesor real.
+    Se sirve como archivo publico porque Twilio/WhatsApp lo leen igual que
+    a una imagen (via media_url) para mandarlo como contacto."""
+    numero = settings.gandys_contact_whatsapp_number
+    vcard = (
+        "BEGIN:VCARD\r\n"
+        "VERSION:3.0\r\n"
+        "FN:Asesor Gandy's\r\n"
+        f"TEL;TYPE=CELL:+{numero}\r\n"
+        "END:VCARD\r\n"
+    )
+    return Response(content=vcard, media_type="text/vcard")
 
 
 def _try_send_carousel(sender: str, incoming_message: str) -> bool:
@@ -121,9 +147,13 @@ async def whatsapp_webhook(request: Request) -> Response:
     # agregar el mensaje actual, si no aparece duplicado (una vez como
     # historial, otra vez como la pregunta puntual de este turno).
     history = get_recent_history(sender, settings.conversation_history_max_exchanges)
+    last_assistant_message = next(
+        (turn["content"] for turn in reversed(history) if turn["role"] == "assistant"),
+        None,
+    )
     append_message(sender, "user", incoming_message)
 
-    intent = classify_intent(incoming_message)
+    intent = classify_intent(incoming_message, last_assistant_message)
     logger.info("Intencion clasificada para %r: %s", incoming_message, intent)
 
     if intent == "SALUDO":
@@ -133,6 +163,22 @@ async def whatsapp_webhook(request: Request) -> Response:
         # hablando de un producto de unas sin ninguna relacion).
         append_message(sender, "assistant", GREETING_REPLY)
         twiml.message(GREETING_REPLY)
+        return Response(content=str(twiml), media_type="application/xml")
+
+    if intent == "ASESOR":
+        try:
+            vcard_url = f"{_resolve_public_base(request)}/static/asesor.vcf"
+            send_vcard(sender, vcard_url)
+            logger.info("Contacto de asesor enviado a %s", sender)
+            append_message(sender, "assistant", "[Se envió el contacto de un asesor]")
+        except Exception:  # noqa: BLE001
+            logger.exception("Fallo el envio del contacto de asesor")
+            fallback_text = (
+                "Tuvimos un problema para compartirte el contacto. Podés "
+                "escribir directo a gandys.com.py mientras lo solucionamos."
+            )
+            append_message(sender, "assistant", fallback_text)
+            twiml.message(fallback_text)
         return Response(content=str(twiml), media_type="application/xml")
 
     carousel_sent = intent == "CATALOGO" and _try_send_carousel(sender, incoming_message)

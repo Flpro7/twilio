@@ -22,30 +22,37 @@ pregunten por una categoria mas especifica o que se los derive con un asesor.
 
 Si la persona trata de preguntar cualquier otra cosa que no tenga que ver con Gandy's
 di con honestidad que no puedes responder esa pregunta, no des razón alguna. Respondes
-en espanol, de forma breve, clara y amigable, como para un chat de WhatsApp."""
+en espanol, de forma breve, clara, amigable y con algunos emojis si es necesario, como para un chat de WhatsApp."""
 
 INTENT_SYSTEM_PROMPT = """Sos un clasificador de intencion para un bot de WhatsApp de
 Gandy's (venta y alquiler de equipamiento logistico: racks, montacargas, apiladoras,
 pallets, maquinas de limpieza, etc.).
 
-Dado el mensaje de un cliente, respondé con UNA SOLA PALABRA, sin explicaciones ni
-puntuacion:
+Se te puede dar el ULTIMO MENSAJE DEL ASISTENTE como referencia (si lo hubo), y el
+MENSAJE NUEVO DEL CLIENTE, que es el que hay que clasificar.
+
+Respondé con UNA SOLA PALABRA, sin explicaciones ni puntuacion:
 
 SALUDO -> el mensaje es un saludo o charla trivial sin contenido real sobre
-productos (ej: "hola", "buenas", "como estas", "gracias", "chau"). NO es una
-consulta sobre el catalogo, no hay que buscar productos para esto.
+productos (ej: "hola", "buenas", "como estas", "gracias", "chau").
 
 CATALOGO -> el cliente quiere ver varios productos disponibles o explorar opciones
 en general (ej: "que productos tienen", "que montacargas hay", "mostrame las
 opciones de racks", "mandame el catalogo").
 
+ASESOR -> el cliente pide explicitamente hablar con un humano, pide el contacto de
+un asesor, O esta aceptando/confirmando una oferta anterior del asistente de
+derivarlo con un asesor (ej: si el ultimo mensaje del asistente ofrecio pasar el
+contacto de un asesor y el cliente responde "si", "dale", "quiero", "por favor",
+"pasame el numero", etc. -- aunque sea muy corto, siempre que este respondiendo a
+esa oferta).
+
 PREGUNTA -> el cliente esta preguntando algo puntual sobre un producto especifico:
 para que sirve, como funciona, caracteristicas, diferencias con otro, precio, o
 cualquier otra consulta concreta. Tambien es PREGUNTA si el mensaje tiene errores
-de tipeo pero la intencion de fondo es una consulta puntual, no un pedido de ver
-varias opciones.
+de tipeo pero la intencion de fondo es una consulta puntual.
 
-Respondé UNICAMENTE con la palabra SALUDO, CATALOGO o la palabra PREGUNTA."""
+Respondé UNICAMENTE con la palabra SALUDO, CATALOGO, ASESOR o PREGUNTA."""
 
 
 def get_chat_completion(
@@ -73,16 +80,25 @@ def get_chat_completion(
     return response.choices[0].message.content.strip()
 
 
-def get_intent_completion(question: str) -> str:
+def get_intent_completion(
+    question: str, last_assistant_message: str | None = None
+) -> str:
     """Llamada corta y barata (max_completion_tokens=10) solo para clasificar
-    si el mensaje es un saludo, un pedido de catalogo, o una pregunta puntual.
-    Separada de get_chat_completion porque usa un system prompt distinto y no
-    necesita contexto del RAG."""
+    la intencion. Si se pasa el ultimo mensaje del asistente, se lo incluye
+    como referencia -- necesario para que respuestas cortas tipo "si" a una
+    oferta previa de derivar con un asesor se clasifiquen bien."""
+    user_content = question
+    if last_assistant_message:
+        user_content = (
+            f"Ultimo mensaje del asistente: {last_assistant_message}\n\n"
+            f"Mensaje nuevo del cliente: {question}"
+        )
+
     response = _client.chat.completions.create(
         model=settings.azure_openai_chat_deployment,
         messages=[
             {"role": "system", "content": INTENT_SYSTEM_PROMPT},
-            {"role": "user", "content": question},
+            {"role": "user", "content": user_content},
         ],
         max_completion_tokens=10,
     )

@@ -15,3 +15,17 @@ def send_whatsapp_message(to: str, body: str) -> str:
     """Envia un mensaje de WhatsApp de sesion libre (fuera del webhook). Devuelve el SID."""
     message = client.messages.create(from_=settings.twilio_whatsapp_number, to=to, body=body)
     return message.sid
+
+
+def send_vcard(to: str, vcard_url: str, caption: str = "") -> str:
+    """Envia un contacto (vCard) por WhatsApp. WhatsApp reconoce un archivo
+    .vcf igual que reconoce una imagen -- via el mismo parametro media_url,
+    no hace falta ningun tipo de mensaje especial ni aprobacion de WhatsApp
+    (es una respuesta dentro de la ventana de 24hs de la conversacion)."""
+    message = client.messages.create(
+        from_=settings.twilio_whatsapp_number,
+        to=to,
+        body=caption,
+        media_url=[vcard_url],
+    )
+    return message.sid

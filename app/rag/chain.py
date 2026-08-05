@@ -3,7 +3,8 @@ from app.rag.embeddings import embed_text
 from app.rag.vector_store import query, query_with_metadata
 
 FALLBACK_ANSWER = (
-    "Todavia no tengo esa informacion cargada. Si querés, puedo proporcionarte el contacto de un asesor de Gandy's por este mismo chat."
+    "Todavia no tengo esa informacion cargada. Si querés, puedo "
+    "proporcionarte el contacto de un asesor de Gandy's por este mismo chat."
 )
 
 
@@ -18,23 +19,29 @@ def answer_question(question: str, history: list[dict] | None = None) -> str:
     return get_chat_completion(question=question, context=context, history=history)
 
 
-def classify_intent(question: str) -> str:
+def classify_intent(question: str, last_assistant_message: str | None = None) -> str:
     """Usa el LLM para decidir si el mensaje es un saludo, un pedido de
-    catalogo, o una pregunta puntual. A diferencia de buscar palabras clave
-    a mano, esto entiende la intencion real del mensaje sin importar
-    errores de tipeo ni formas de preguntar que no se anticiparon.
+    catalogo, un pedido de hablar con un asesor, o una pregunta puntual. A
+    diferencia de buscar palabras clave a mano, esto entiende la intencion
+    real del mensaje sin importar errores de tipeo ni formas de preguntar
+    que no se anticiparon.
 
-    Devuelve "SALUDO", "CATALOGO" o "PREGUNTA". Ante cualquier falla (o una
-    respuesta que no sea ninguna de las tres) devuelve "PREGUNTA" -- el
-    fallback mas seguro, porque en el peor caso responde con texto en vez
-    de mandar un carousel de mas o saltarse una consulta real.
+    last_assistant_message es el ultimo mensaje que mando el bot -- se usa
+    para interpretar respuestas cortas como "si" cuando el bot acaba de
+    ofrecer derivar con un asesor.
+
+    Devuelve "SALUDO", "CATALOGO", "ASESOR" o "PREGUNTA". Ante cualquier
+    falla (o una respuesta que no sea ninguna de las cuatro) devuelve
+    "PREGUNTA" -- el fallback mas seguro.
     """
     try:
-        raw = get_intent_completion(question)
+        raw = get_intent_completion(question, last_assistant_message)
     except Exception:  # noqa: BLE001
         return "PREGUNTA"
 
     normalized = raw.strip().upper()
+    if "ASESOR" in normalized:
+        return "ASESOR"
     if "SALUDO" in normalized:
         return "SALUDO"
     if "CATALOGO" in normalized:
