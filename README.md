@@ -65,7 +65,7 @@ Procfile                  Tells Railway (or any Heroku-style platform) how to st
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.11 or 3.12
 - A **Twilio** account with WhatsApp enabled (sandbox for testing, or a production WhatsApp Sender)
 - An **Azure OpenAI** resource with two deployments: one for chat (e.g. `gpt-5.4-mini`) and one for embeddings (e.g. `text-embedding-3-small`)
 - For local development: some way to expose your `localhost` to the internet (dev tunnels, ngrok, etc.), since Twilio needs a public URL to send webhooks to
@@ -205,7 +205,7 @@ pytest
 ```
 
 ## Notes and known limitations
-
+- **Python version**: This project only works with Python 3.11 or 3.12, any other Python versions will not be compatible.
 - **The scraper has two modes**: `scrape_products()` (fast, ~30 sample products, no Playwright) and `scrape_products_full()` (full catalog, ~135 products, requires Playwright). `ingest.py` uses the full mode.
 - **The carousel requires exactly `TWILIO_CAROUSEL_NUM_CARDS` products with an image** to trigger; if the search finds fewer, it falls back to a broader product-only text search (`get_catalog_answer`), and only to the fully generic text search (`answer_question`) for non-browsing questions.
 - **An approved carousel template is locked to a fixed number of cards and fixed literal text.** Structural changes (card count, wording, button layout) need a new template and a new approval round.
